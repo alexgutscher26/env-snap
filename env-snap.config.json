@@ -1,0 +1,37 @@
+{
+  "snapshotDir": ".env-snapshots",
+  "files": [".env", ".env.local"],
+  "autoGitCommit": true,
+  "autoPush": true,
+  "branch": "main",
+  "tag": false,
+  "commitHooks": ["echo 'Snapshot taken!' > .env-snapshots/hook.log"],
+  "hooks": [
+    {
+      "type": "shell",
+      "command": "echo 'Snapshot $SNAPSHOT_ID taken by $USER on $HOST' >> .env-snapshots/hook.log"
+    },
+    {
+      "type": "webhook",
+      "url": "https://example.com/webhook",
+      "body": {
+        "text": "Env snapshot $SNAPSHOT_ID taken by $USER on $HOST"
+      }
+    },
+    {
+      "type": "slack",
+      "webhook": "https://hooks.slack.com/services/XXX/YYY/ZZZ",
+      "message": "Env snapshot $SNAPSHOT_ID taken by $USER on $HOST"
+    },
+    {
+      "type": "discord",
+      "webhook": "https://discord.com/api/webhooks/XXX/YYY",
+      "content": "Env snapshot $SNAPSHOT_ID taken by $USER on $HOST"
+    },
+    {
+      "type": "teams",
+      "webhook": "https://outlook.office.com/webhook/XXX/YYY/ZZZ",
+      "text": "Env snapshot $SNAPSHOT_ID taken by $USER on $HOST"
+    }
+  ]
+}

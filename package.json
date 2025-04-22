@@ -1,0 +1,43 @@
+{
+  "name": "env-snapper",
+  "version": "0.2.0",
+  "description": "Automatically snapshots .env changes and lets you revert to previous environment variable states.",
+  "main": "dist/index.js",
+  "bin": {
+    "env-snap": "dist/cli.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/cli.js"
+  },
+  "keywords": [
+    "env",
+    "dotenv",
+    "snapshot",
+    "cli",
+    "environment"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "archiver": "^7.0.1",
+    "chalk": "^5.4.1",
+    "chokidar": "^3.5.3",
+    "commander": "^11.1.0",
+    "diff": "^7.0.0",
+    "fs-extra": "^11.3.0",
+    "node-fetch": "^3.3.2",
+    "unzipper": "^0.12.3"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "devDependencies": {
+    "@types/archiver": "^6.0.3",
+    "@types/diff": "^7.0.2",
+    "@types/fs-extra": "^11.0.4",
+    "@types/node": "^22.14.1",
+    "@types/unzipper": "^0.10.11",
+    "typescript": "^5.4.5"
+  }
+}
