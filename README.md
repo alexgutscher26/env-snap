@@ -3,7 +3,6 @@
 [![npm version](https://img.shields.io/npm/v/env-snapper.svg)](https://www.npmjs.com/package/env-snapper)
 [![npm downloads](https://img.shields.io/npm/dm/env-snapper.svg)](https://www.npmjs.com/package/env-snapper)
 [![license](https://img.shields.io/npm/l/env-snapper.svg)](https://github.com/madajoe6969/env-snapper/blob/main/LICENSE)
-[![CI](https://github.com/madajoe6969/env-snapper/actions/workflows/ci.yml/badge.svg)](https://github.com/madajoe6969/env-snapper/actions)
 
 
 > **Security Note:**
