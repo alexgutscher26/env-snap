@@ -1,19 +1,80 @@
 import * as fs from 'fs-extra';
 import * as path from 'path';
+import chalk from 'chalk';
+import { performance } from 'perf_hooks';
+import { v4 as uuidv4 } from 'uuid';
+import { EventEmitter } from 'events';
+import { exec, execSync } from 'child_process';
+import { userInfo } from 'os';
+import crypto from 'crypto';
+
+function createHash(algorithm: string): crypto.Hash {
+  return crypto.createHash(algorithm);
+}
+import { isError } from 'node:util';
+
+interface SnapshotMetadata {
+  id: string;
+  timestamp: string;
+  description?: string;
+  files: string[];
+  user: string;
+  hostname: string;
+  git: {
+    hash: string;
+    branch: string;
+    remote: string | null;
+  };
+  system: {
+    platform: string;
+    nodeVersion: string;
+    memory: {
+      total: number;
+      free: number;
+    };
+  };
+  stats: {
+    totalSize: number;
+    duration: number;
+    files: Array<{
+      name: string;
+      size: number;
+      hash: string;
+    }>;
+  };
+};
 
 const DEFAULT_SNAPSHOT_DIR = '.env-snapshots';
 const DEFAULT_ENV_FILE = '.env';
 
-function readConfig() {
+function readConfig(): Record<string, any> {
   const configPath = path.resolve(process.cwd(), 'env-snap.config.json');
-  if (fs.existsSync(configPath)) {
-    try {
-      return fs.readJsonSync(configPath);
-    } catch {
-      // ignore parse errors, fallback to defaults
+  try {
+    if (!fs.existsSync(configPath)) {
+      return {};
     }
+    const config = fs.readJsonSync(configPath);
+    validateConfig(config);
+    return config;
+  } catch (error: unknown) {
+    console.error(chalk.red(`Error reading config: ${isError(error) ? error.message : String(error)}`));
+    return {};
   }
-  return {};
+}
+
+function validateConfig(config: Record<string, any>): void {
+  if (config.snapshotDir && typeof config.snapshotDir !== 'string') {
+    throw new Error('snapshotDir must be a string');
+  }
+  if (config.files && !Array.isArray(config.files)) {
+    throw new Error('files must be an array');
+  }
+  if (config.envFile && typeof config.envFile !== 'string') {
+    throw new Error('envFile must be a string');
+  }
+  if (config.maxSnapshots && typeof config.maxSnapshots !== 'number') {
+    throw new Error('maxSnapshots must be a number');
+  }
 }
 
 export function getSnapshotDir(): string {
@@ -56,55 +117,132 @@ async function runGitIntegrationAfterSnapshot(message: string, id: string) {
   }
 }
 
-export async function snapshot(description?: string) {
+export async function snapshot(description?: string): Promise<string> {
+  const startTime = performance.now();
   const files = getSnapshotFiles();
   const dir = getSnapshotDir();
-  await fs.ensureDir(dir);
-  const id = getTimestamp();
-  let allExist = true;
-  for (const file of files) {
-    if (!fs.existsSync(file)) {
-      console.error(`File not found: ${file}`);
-      allExist = false;
-    }
+
+  if (files.length === 0) {
+    throw new Error('No environment files configured for snapshotting');
   }
-  if (!allExist) return;
-  for (const file of files) {
-    const snapPath = path.join(dir, `env-${id}__${path.basename(file)}`);
-    await fs.copy(file, snapPath);
-  }
-  // Gather extra metadata
-  const os = await import('os');
-  let gitInfo = { hash: '', branch: '' };
+
   try {
-    const { execSync } = await import('child_process');
-    gitInfo.hash = execSync('git rev-parse HEAD').toString().trim();
-    gitInfo.branch = execSync('git rev-parse --abbrev-ref HEAD').toString().trim();
-  } catch {}
-  const user = os.userInfo().username;
-  const hostname = os.hostname();
-  const fileStats = await Promise.all(files.map(async (f) => {
-    try {
-      const stat = await fs.stat(f);
-      return { file: path.basename(f), size: stat.size };
-    } catch {
-      return { file: path.basename(f), size: null };
+    await fs.ensureDir(dir);
+
+    // Validate all files exist before proceeding
+    const missingFiles = files.filter(file => !fs.existsSync(file));
+    if (missingFiles.length > 0) {
+      throw new Error(`Missing required files: ${missingFiles.join(', ')}`);
     }
-  }));
-  // Save meta for this group
-  const metaPath = path.join(dir, `env-${id}.json`);
-  await fs.writeJson(metaPath, {
-    description,
-    timestamp: id,
-    files: files.map(f => path.basename(f)),
-    user,
-    hostname,
-    git: gitInfo,
-    fileStats
-  });
-  console.log(`Snapshot created: env-${id} for files: ${files.map(f => path.basename(f)).join(', ')}` + (description ? `\nDescription: ${description}` : ''));
-  await runGitIntegrationAfterSnapshot(description ? `env-snap: ${description}` : 'env-snap: snapshot update', id);
-  await runHooksAfterSnapshot(id, description, { user, hostname });
+
+    // Generate unique snapshot ID
+    const id = uuidv4();
+
+    // Process files with progress tracking
+    const filePromises = files.map(async (file) => {
+      const snapPath = path.join(dir, `env-${id}__${path.basename(file)}`);
+      const stat = await fs.stat(file);
+      const hash = await calculateFileHash(file);
+
+      try {
+        await fs.copy(file, snapPath);
+        return {
+          name: path.basename(file),
+          size: stat.size,
+          hash,
+          status: 'success'
+        };
+      } catch (error: unknown) {
+        return {
+          name: path.basename(file),
+          size: stat.size,
+          hash,
+          status: 'failed',
+          error: isError(error) ? error.message : String(error)
+        };
+      }
+    });
+
+    const fileResults = await Promise.all(filePromises);
+
+    // Gather system information
+    const os = await import('os');
+    const { execSync } = await import('child_process');
+
+    const gitInfo = {
+      hash: '' as string,
+      branch: '' as string,
+      remote: null as string | null
+    };
+
+    try {
+      gitInfo.hash = execSync('git rev-parse HEAD').toString().trim() || '';
+      gitInfo.branch = execSync('git rev-parse --abbrev-ref HEAD').toString().trim() || '';
+      gitInfo.remote = execSync('git config --get remote.origin.url').toString().trim() || null;
+    } catch {}
+
+    // Create metadata
+    const metadata: SnapshotMetadata = {
+      id,
+      timestamp: new Date().toISOString(),
+      description,
+      files: files.map(f => path.basename(f)),
+      user: os.userInfo().username,
+      hostname: os.hostname(),
+      git: gitInfo,
+      system: {
+        platform: process.platform,
+        nodeVersion: process.version,
+        memory: {
+          total: os.totalmem(),
+          free: os.freemem()
+        }
+      },
+      stats: {
+        totalSize: fileResults.reduce((sum, file) => sum + (file.size || 0), 0),
+        duration: performance.now() - startTime,
+        files: fileResults.map(file => ({
+          name: file.name,
+          size: file.size,
+          hash: file.hash
+        }))
+      }
+    };
+
+    // Save metadata
+    const metaPath = path.join(dir, `env-${id}.json`);
+    await fs.writeJson(metaPath, metadata, { spaces: 2 });
+
+    // Run git integration if configured
+    await runGitIntegrationAfterSnapshot(description || 'Automatic snapshot', id);
+
+    // Run any configured hooks
+    await runHooksAfterSnapshot(id, description, {
+      user: metadata.user,
+      hostname: metadata.hostname
+    });
+
+    // Prune old snapshots if configured
+    const config = readConfig();
+    if (config.maxSnapshots) {
+      await pruneSnapshots(config.maxSnapshots);
+    }
+
+    console.log(chalk.green(`Created snapshot ${id} (${fileResults.length} files)`));
+    console.log(chalk.gray(`Duration: ${Math.round(metadata.stats.duration)}ms`));
+    return id;
+
+  } catch (error: unknown) {
+    console.error(chalk.red(`Failed to create snapshot: ${isError(error) ? error.message : String(error)}`));
+    throw error;
+  }
+}
+
+async function calculateFileHash(file: string): Promise<string> {
+  const hash = createHash('sha256');
+  const data = await fs.readFile(file);
+  hash.update(data);
+  return hash.digest('hex');
 }
 
 async function runHooksAfterSnapshot(id: string, description: string | undefined, ctx: { user: string, hostname: string }) {
@@ -121,24 +259,36 @@ async function runHooksAfterSnapshot(id: string, description: string | undefined
         exec(cmd, (err) => {
           if (err) console.error('Shell hook failed:', err.message);
         });
-      } catch (e: any) {
-        console.error('Shell hook error:', e.message);
+      } catch (e: unknown) {
+        if (isError(e)) {
+          console.error('Shell hook error:', e.message);
+        } else {
+          console.error('Shell hook error:', String(e));
+        }
       }
     } else if (hook.type === 'webhook' && hook.url) {
       try {
         const fetch = (await import('node-fetch')).default;
         const body = JSON.stringify(hook.body || {}).replace(/\$SNAPSHOT_ID/g, SNAPSHOT_ID).replace(/\$USER/g, USER).replace(/\$HOST/g, HOST);
         await fetch(hook.url, { method: 'POST', body, headers: { 'Content-Type': 'application/json' } });
-      } catch (e: any) {
-        console.error('Webhook hook error:', e.message);
+      } catch (e: unknown) {
+        if (isError(e)) {
+          console.error('Webhook hook error:', e.message);
+        } else {
+          console.error('Webhook hook error:', String(e));
+        }
       }
     } else if (hook.type === 'slack' && hook.webhook) {
       try {
         const fetch = (await import('node-fetch')).default;
         const msg = (hook.message || '').replace(/\$SNAPSHOT_ID/g, SNAPSHOT_ID).replace(/\$USER/g, USER).replace(/\$HOST/g, HOST);
         await fetch(hook.webhook, { method: 'POST', body: JSON.stringify({ text: msg }), headers: { 'Content-Type': 'application/json' } });
-      } catch (e: any) {
-        console.error('Slack hook error:', e.message);
+      } catch (e: unknown) {
+        if (isError(e)) {
+          console.error('Slack hook error:', e.message);
+        } else {
+          console.error('Slack hook error:', String(e));
+        }
       }
     }
     else if (hook.type === 'discord' && hook.webhook) {
@@ -146,8 +296,12 @@ async function runHooksAfterSnapshot(id: string, description: string | undefined
         const fetch = (await import('node-fetch')).default;
         const content = (hook.content || '').replace(/\$SNAPSHOT_ID/g, SNAPSHOT_ID).replace(/\$USER/g, USER).replace(/\$HOST/g, HOST);
         await fetch(hook.webhook, { method: 'POST', body: JSON.stringify({ content }), headers: { 'Content-Type': 'application/json' } });
-      } catch (e: any) {
-        console.error('Discord hook error:', e.message);
+      } catch (e: unknown) {
+        if (isError(e)) {
+          console.error('Discord hook error:', e.message);
+        } else {
+          console.error('Discord hook error:', String(e));
+        }
       }
     }
     else if (hook.type === 'teams' && hook.webhook) {
@@ -155,8 +309,12 @@ async function runHooksAfterSnapshot(id: string, description: string | undefined
         const fetch = (await import('node-fetch')).default;
         const text = (hook.text || '').replace(/\$SNAPSHOT_ID/g, SNAPSHOT_ID).replace(/\$USER/g, USER).replace(/\$HOST/g, HOST);
         await fetch(hook.webhook, { method: 'POST', body: JSON.stringify({ text }), headers: { 'Content-Type': 'application/json' } });
-      } catch (e: any) {
-        console.error('Teams hook error:', e.message);
+      } catch (e: unknown) {
+        if (isError(e)) {
+          console.error('Teams hook error:', e.message);
+        } else {
+          console.error('Teams hook error:', String(e));
+        }
       }
     }
   }

@@ -4,7 +4,6 @@
 [![npm downloads](https://img.shields.io/npm/dm/env-snapper.svg)](https://www.npmjs.com/package/env-snapper)
 [![license](https://img.shields.io/npm/l/env-snapper.svg)](https://github.com/madajoe6969/env-snapper/blob/main/LICENSE)
 
-
 > **Security Note:**
 > It is strongly recommended to add `.env-snapshots/` to your `.gitignore` to avoid accidentally committing sensitive environment history to your repository.
 
@@ -12,6 +11,56 @@ Automatically snapshots .env changes and lets you revert to previous environment
 
 ## Features
 - Snapshots `.env` file changes automatically
+- Comprehensive metadata collection
+- Configurable snapshot directories
+- File-based snapshot storage
+- Hook system for post-snapshot actions
+- Error handling and validation
+- Progress tracking
+- TypeScript support
+
+## Installation
+
+```bash
+npm install -D env-snapper
+```
+
+## Usage
+
+```bash
+# Create a snapshot
+npx env-snapper snapshot
+
+# List snapshots
+npx env-snapper list
+
+# Revert to a specific snapshot
+npx env-snapper revert <snapshot-id>
+```
+
+## Configuration
+
+Create a `env-snap.config.json` file in your project root:
+
+```json
+{
+  "snapshotDir": "path/to/snapshots",
+  "files": [
+    ".env",
+    ".env.local"
+  ],
+  "hooks": [
+    {
+      "type": "shell",
+      "command": "echo Snapshot created: $SNAPSHOT_ID"
+    }
+  ]
+}
+```
+
+## License
+
+MIT
 - List, view, and revert to previous environment variable states
 - CLI tool for easy usage
 - Add descriptions to snapshots
