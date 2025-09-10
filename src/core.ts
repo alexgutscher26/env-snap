@@ -7,6 +7,8 @@ import { EventEmitter } from 'events';
 import { exec, execSync } from 'child_process';
 import { userInfo } from 'os';
 import crypto from 'crypto';
+import { Table } from './utils';
+import { cache } from './cache';
 
 function createHash(algorithm: string): crypto.Hash {
   return crypto.createHash(algorithm);
@@ -17,6 +19,7 @@ interface SnapshotMetadata {
   id: string;
   timestamp: string;
   description?: string;
+  tags?: string[];
   files: string[];
   user: string;
   hostname: string;
@@ -117,7 +120,7 @@ async function runGitIntegrationAfterSnapshot(message: string, id: string) {
   }
 }
 
-export async function snapshot(description?: string): Promise<string> {
+export async function snapshot(description?: string, tags?: string[]): Promise<string> {
   const startTime = performance.now();
   const files = getSnapshotFiles();
   const dir = getSnapshotDir();
@@ -186,6 +189,7 @@ export async function snapshot(description?: string): Promise<string> {
       id,
       timestamp: new Date().toISOString(),
       description,
+      tags, // Add tags to metadata
       files: files.map(f => path.basename(f)),
       user: os.userInfo().username,
       hostname: os.hostname(),
@@ -229,6 +233,9 @@ export async function snapshot(description?: string): Promise<string> {
     }
 
     console.log(chalk.green(`Created snapshot ${id} (${fileResults.length} files)`));
+    if (tags && tags.length > 0) {
+      console.log(chalk.gray(`Tags: ${tags.join(', ')}`));
+    }
     console.log(chalk.gray(`Duration: ${Math.round(metadata.stats.duration)}ms`));
     return id;
 
@@ -322,6 +329,14 @@ async function runHooksAfterSnapshot(id: string, description: string | undefined
 
 
 export async function list() {
+  // Check cache first
+  const cacheKey = 'snapshot-list';
+  const cached = cache.get(cacheKey);
+  if (cached) {
+    console.log(cached);
+    return;
+  }
+  
   const dir = getSnapshotDir();
   await fs.ensureDir(dir);
   const files = (await fs.readdir(dir)).filter(f => f.endsWith('.json')).sort();
@@ -329,15 +344,29 @@ export async function list() {
     console.log('No snapshots found.');
     return;
   }
+  
+  const table = new Table([
+    { title: 'ID', width: 36 },
+    { title: 'Description', width: 30 },
+    { title: 'Timestamp', width: 20 },
+    { title: 'Tags', width: 20 }
+  ]);
+  
   for (const metaFile of files) {
     const meta = await fs.readJson(path.join(dir, metaFile));
-    const id = metaFile.replace(/\.json$/, '');
-    const desc = meta.description ? ` - ${meta.description}` : '';
-    const user = meta.user ? ` | user: ${meta.user}` : '';
-    const host = meta.hostname ? ` | host: ${meta.hostname}` : '';
-    const git = meta.git && meta.git.hash ? ` | git: ${meta.git.hash.substring(0,7)}@${meta.git.branch}` : '';
-    console.log(`${id}${desc}${user}${host}${git}`);
+    const id = metaFile.replace(/\.json$/, '').substring(0, 36);
+    const desc = meta.description || '';
+    const timestamp = new Date(meta.timestamp).toLocaleDateString();
+    const tags = meta.tags ? meta.tags.join(', ') : '';
+    
+    table.addRow(id, desc, timestamp, tags);
   }
+  
+  const output = table.toString();
+  console.log(output);
+  
+  // Cache for 1 minute
+  cache.set(cacheKey, output, 60 * 1000);
 }
 
 export async function snapshotInfo(id: string) {
@@ -398,11 +427,21 @@ export async function setSnapshotDescription(id: string, description: string) {
   console.log(`Description set for snapshot ${id}: ${description}`);
 }
 
-export async function getSnapshotMeta(id: string): Promise<{description?: string, timestamp?: string, files?: string[]} | null> {
+export async function getSnapshotMeta(id: string): Promise<{description?: string, timestamp?: string, files?: string[], tags?: string[]} | null> {
+  // Check cache first
+  const cacheKey = `snapshot-meta-${id}`;
+  const cached = cache.get(cacheKey);
+  if (cached) {
+    return cached;
+  }
+  
   const dir = getSnapshotDir();
   const metaPath = path.join(dir, (id.startsWith('env-') ? id : `env-${id}`) + '.json');
   if (await fs.pathExists(metaPath)) {
-    return await fs.readJson(metaPath);
+    const meta = await fs.readJson(metaPath);
+    // Cache for 5 minutes
+    cache.set(cacheKey, meta, 5 * 60 * 1000);
+    return meta;
   }
   return null;
 }
@@ -431,4 +470,82 @@ export async function pruneSnapshots(keep: number = 5) {
     console.log(`Deleted snapshot: ${file}`);
   }
   console.log(`Pruned to keep last ${keep} snapshots.`);
+}
+
+export async function addTagToSnapshot(id: string, tag: string) {
+  const dir = getSnapshotDir();
+  const metaPath = path.join(dir, (id.startsWith('env-') ? id : `env-${id}`) + '.json');
+  
+  if (!(await fs.pathExists(metaPath))) {
+    throw new Error(`Snapshot metadata not found: ${metaPath}`);
+  }
+  
+  const meta = await fs.readJson(metaPath);
+  
+  // Initialize tags array if it doesn't exist
+  if (!meta.tags) {
+    meta.tags = [];
+  }
+  
+  // Add tag if it doesn't already exist
+  if (!meta.tags.includes(tag)) {
+    meta.tags.push(tag);
+    await fs.writeJson(metaPath, meta, { spaces: 2 });
+    console.log(`Added tag '${tag}' to snapshot ${id}`);
+  } else {
+    console.log(`Tag '${tag}' already exists on snapshot ${id}`);
+  }
+}
+
+export async function removeTagFromSnapshot(id: string, tag: string) {
+  const dir = getSnapshotDir();
+  const metaPath = path.join(dir, (id.startsWith('env-') ? id : `env-${id}`) + '.json');
+  
+  if (!(await fs.pathExists(metaPath))) {
+    throw new Error(`Snapshot metadata not found: ${metaPath}`);
+  }
+  
+  const meta = await fs.readJson(metaPath);
+  
+  // Remove tag if it exists
+  if (meta.tags && meta.tags.includes(tag)) {
+    meta.tags = meta.tags.filter((t: string) => t !== tag);
+    await fs.writeJson(metaPath, meta, { spaces: 2 });
+    console.log(`Removed tag '${tag}' from snapshot ${id}`);
+  } else {
+    console.log(`Tag '${tag}' does not exist on snapshot ${id}`);
+  }
+}
+
+export async function listSnapshotsByTag(tag: string) {
+  const dir = getSnapshotDir();
+  await fs.ensureDir(dir);
+  const files = (await fs.readdir(dir)).filter((f: string) => f.endsWith('.json')).sort();
+  
+  if (files.length === 0) {
+    console.log('No snapshots found.');
+    return;
+  }
+  
+  let foundSnapshots = false;
+  
+  for (const metaFile of files) {
+    const meta = await fs.readJson(path.join(dir, metaFile));
+    const id = metaFile.replace(/\.json$/, '');
+    
+    // Check if the snapshot has the specified tag
+    if (meta.tags && meta.tags.includes(tag)) {
+      foundSnapshots = true;
+      const desc = meta.description ? ` - ${meta.description}` : '';
+      const user = meta.user ? ` | user: ${meta.user}` : '';
+      const host = meta.hostname ? ` | host: ${meta.hostname}` : '';
+      const git = meta.git && meta.git.hash ? ` | git: ${meta.git.hash.substring(0,7)}@${meta.git.branch}` : '';
+      const tags = meta.tags ? ` | tags: ${meta.tags.join(', ')}` : '';
+      console.log(`${id}${desc}${user}${host}${git}${tags}`);
+    }
+  }
+  
+  if (!foundSnapshots) {
+    console.log(`No snapshots found with tag '${tag}'.`);
+  }
 }

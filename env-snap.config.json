@@ -33,5 +33,9 @@
       "webhook": "https://outlook.office.com/webhook/XXX/YYY/ZZZ",
       "text": "Env snapshot $SNAPSHOT_ID taken by $USER on $HOST"
     }
-  ]
+  ],
+  "encryption": {
+    "enabled": false,
+    "algorithm": "aes-256-cbc"
+  }
 }

@@ -10,6 +10,7 @@
 Automatically snapshots .env changes and lets you revert to previous environment variable states.
 
 ## Features
+
 - Snapshots `.env` file changes automatically
 - Comprehensive metadata collection
 - Configurable snapshot directories
@@ -18,6 +19,13 @@ Automatically snapshots .env changes and lets you revert to previous environment
 - Error handling and validation
 - Progress tracking
 - TypeScript support
+- **Enhanced Security**: Encryption for exported snapshots
+- **Tagging System**: Organize snapshots with custom tags
+- **Enhanced Diff View**: Compare snapshots with ignore options and sensitive variable highlighting
+- **Plugin System**: Extend functionality through custom plugins
+- **Performance Caching**: Improved performance with intelligent caching
+- **Analytics**: Usage tracking and reporting
+- **Health Checks**: Verify snapshot integrity
 
 ## Installation
 
@@ -54,13 +62,18 @@ Create a `env-snap.config.json` file in your project root:
       "type": "shell",
       "command": "echo Snapshot created: $SNAPSHOT_ID"
     }
-  ]
+  ],
+  "encryption": {
+    "enabled": true,
+    "algorithm": "aes-256-cbc"
+  }
 }
 ```
 
 ## License
 
 MIT
+
 - List, view, and revert to previous environment variable states
 - CLI tool for easy usage
 - Add descriptions to snapshots
@@ -68,8 +81,9 @@ MIT
 - Preview changes before restoring a snapshot
 
 ## Usage
+
 ```
-npm install -g env-snap
+npm i env-snapper
 
 # Initialize env-snap in your project
 npx env-snap init
@@ -104,9 +118,82 @@ npx env-snap prune 10
 
 # Preview changes before restoring a snapshot
 npx env-snap preview <snapshot-id>
+
+# Tag a snapshot
+npx env-snap tag <snapshot-id> "production"
+
+# List snapshots with a specific tag
+npx env-snap list --tag "production"
+
+# Remove a tag from a snapshot
+npx env-snap untag <snapshot-id> "production"
+
+# Verify snapshot integrity
+npx env-snap verify
+
+# Clear the cache
+npx env-snap cache-clear
+
+# Show analytics report
+npx env-snap analytics-report
+```
+
+## Enhanced Features
+
+### Tagging System
+
+Organize your snapshots with custom tags:
+
+```bash
+# Create a snapshot with tags
+npx env-snap snapshot --tags "production,release-v1.2"
+
+# Add tags to existing snapshot
+npx env-snap tag <snapshot-id> "production"
+
+# List snapshots with specific tag
+npx env-snap list --tag "production"
+
+# Remove tag from snapshot
+npx env-snap untag <snapshot-id> "production"
+```
+
+### Enhanced Diff View
+
+Compare snapshots with more detailed information:
+
+```bash
+# Ignore specific variables in diff
+npx env-snap diff <snapshot-id> --ignore "SECRET_KEY,DATABASE_URL"
+
+# Sensitive variables are automatically highlighted
+npx env-snap diff <snapshot-id>
+```
+
+### Encryption for Exported Snapshots
+
+Secure your exported snapshots with encryption:
+
+```bash
+# Export snapshots with encryption
+npx env-snap export my-snapshots.zip --encrypt --password "mypassword"
+
+# Import encrypted snapshots
+npx env-snap import my-snapshots.zip --decrypt --password "mypassword"
+```
+
+### Plugin System
+
+Extend env-snapper functionality with custom plugins:
+
+```bash
+# Plugins are automatically loaded from the env-snap-plugins directory
+# Execute plugin commands
+npx env-snap plugin:<plugin-name>:<command-name>
 ```
 
 ## How it works
+
 - Snapshots are stored in `.env-snapshots/` in your project directory (configurable).
 - Each snapshot is named with a timestamp or unique ID.
 - Descriptions can be added at creation (`--desc`) or later (`desc` command).
@@ -122,7 +209,11 @@ You can add an `env-snap.config.json` file to your project root to customize beh
 ```json
 {
   "snapshotDir": ".env-snapshots", // Where to store snapshots
-  "files": [".env", ".env.local"]
+  "files": [".env", ".env.local"],
+  "encryption": {
+    "enabled": false,
+    "algorithm": "aes-256-cbc"
+  }
 }
 ```
 
@@ -135,12 +226,27 @@ If not specified, defaults are used. All commands (snapshot, revert, diff, previ
 You can export all snapshots to a zip file and import them into another project or machine:
 
 - **Export all snapshots:**
+
   ```sh
   npx env-snap export my-snapshots.zip
   ```
+
 - **Import snapshots from a zip file:**
+
   ```sh
   npx env-snap import my-snapshots.zip
+  ```
+
+- **Export snapshots with encryption:**
+
+  ```sh
+  npx env-snap export my-snapshots.zip --encrypt --password "mypassword"
+  ```
+
+- **Import encrypted snapshots:**
+
+  ```sh
+  npx env-snap import my-snapshots.zip --decrypt --password "mypassword"
   ```
 
 This is useful for sharing environment history, moving between machines, or backing up your snapshot archive.
@@ -151,23 +257,28 @@ This is useful for sharing environment history, moving between machines, or back
 
 You can commit, push, pull, tag, and run hooks on your snapshot history directly from env-snap:
 
-- **Commit all snapshot changes:**
+- **Commit all snapshot changes:**s
+
   ```sh
   npx env-snap git-commit -m "env-snap: update"
   ```
+
   (If no message is provided, a default message is used.)
 
 - **View git log for snapshots:**
+
   ```sh
   npx env-snap git-log
   ```
 
 - **Push snapshots and tags to remote:**
+
   ```sh
   npx env-snap push
   ```
 
 - **Pull snapshots and tags from remote:**
+
   ```sh
   npx env-snap pull
   ```
@@ -175,6 +286,7 @@ You can commit, push, pull, tag, and run hooks on your snapshot history directly
 ### Hooks & Notifications
 
 env-snap supports running hooks and sending notifications after each snapshot. You can use:
+
 - **Shell hooks** (run local commands)
 - **Webhooks** (POST to any URL)
 - **Slack** (send to a Slack channel)
@@ -235,6 +347,7 @@ You can enable automatic git actions in your `env-snap.config.json`:
 ```
 
 Every snapshot will:
+
 - Switch to the specified branch (if set)
 - Commit changes in `.env-snapshots`
 - Tag the commit (if enabled)
@@ -247,6 +360,6 @@ This allows you to fully automate backup, sync, and audit of your environment hi
 
 ## Author
 
-- Alex G. 
+- Alex G.
 
 This is an open-source project. Contributions welcome!
