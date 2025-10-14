@@ -1,6 +1,6 @@
 {
   "snapshotDir": ".env-snapshots",
-  "files": [".env", ".env.local"],
+  "files": [".env"],
   "autoGitCommit": true,
   "autoPush": true,
   "branch": "main",

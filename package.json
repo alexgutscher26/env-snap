@@ -1,6 +1,6 @@
 {
   "name": "env-snapper",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "description": "Automatically snapshots .env changes and lets you revert to previous environment variable states.",
   "main": "dist/index.js",
   "bin": {
