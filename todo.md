@@ -23,7 +23,6 @@ These priorities are based on user feedback and core functionality needs. Update
 
 ### User Interface & Experience
 - **Web-based Dashboard** (Priority: Low, Status: Pending): Develop a simple web UI for managing snapshots, viewing diffs, and performing operations without CLI commands.
-- **Interactive CLI Prompts** (Priority: Medium, Status: Pending): Enhance CLI with interactive prompts for better user guidance (e.g., using inquirer.js for selections).
 - **Rich Terminal Output** (Priority: Medium, Status: Pending): Improve output formatting with better colors, tables, and progress bars for list and diff commands.
 
 ### Integration & Extensibility

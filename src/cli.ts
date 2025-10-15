@@ -3,6 +3,7 @@ import { Command } from 'commander';
 import { init, snapshot, list, revert } from './core';
 import { pluginManager } from './plugins';
 import { analytics } from './analytics';
+import inquirer from 'inquirer';
 
 const program = new Command();
 
@@ -54,11 +55,41 @@ program
   .action(async (options) => {
     await analytics.track('snapshot', { hasDescription: !!options.desc, hasTags: !!options.tags });
     const core = await import('./core');
-    const snapshotId = await core.snapshot(options.desc);
+    
+    // Interactive prompts for description and tags if not provided
+    let desc = options.desc;
+    let tags: string[] = [];
+    if (!desc) {
+      const answers = await inquirer.prompt([
+        {
+          type: 'input',
+          name: 'description',
+          message: 'Enter a description for this snapshot (optional):',
+          default: ''
+        }
+      ]);
+      desc = answers.description || undefined;
+    }
+    if (!options.tags) {
+      const answers = await inquirer.prompt([
+        {
+          type: 'input',
+          name: 'tags',
+          message: 'Enter comma-separated tags for this snapshot (optional):',
+          default: ''
+        }
+      ]);
+      if (answers.tags) {
+        tags = answers.tags.split(',').map((tag: string) => tag.trim()).filter((tag: string) => tag.length > 0);
+      }
+    } else {
+      tags = options.tags.split(',').map((tag: string) => tag.trim());
+    }
+    
+    const snapshotId = await core.snapshot(desc, tags.length > 0 ? tags : undefined);
     
     // Add tags if provided
-    if (options.tags) {
-      const tags = options.tags.split(',').map((tag: string) => tag.trim());
+    if (tags.length > 0) {
       for (const tag of tags) {
         await core.addTagToSnapshot(snapshotId, tag);
       }
@@ -84,7 +115,22 @@ program
   .description('Revert .env to the specified snapshot ID')
   .action(async (id) => {
     await analytics.track('revert', { snapshotId: id });
-    await revert(id);
+    
+    // Interactive confirmation for revert
+    const answers = await inquirer.prompt([
+      {
+        type: 'confirm',
+        name: 'confirm',
+        message: `Are you sure you want to revert to snapshot ${id}? This will overwrite current .env files.`,
+        default: false
+      }
+    ]);
+    
+    if (answers.confirm) {
+      await revert(id);
+    } else {
+      console.log('Revert cancelled.');
+    }
   });
 
 program
